@@ -37,13 +37,12 @@
 <div id="gate">
   <div class="box">
     <h1>런웨이</h1>
-    <p>잔고 소진일 대시보드입니다. 등록된 계정만 볼 수 있습니다.</p>
+    <p>잔고 소진일 대시보드입니다. 데이터는 비밀번호로 암호화돼 있습니다.</p>
     <form id="loginform">
-      <label for="email">이메일</label>
-      <input type="email" id="email" autocomplete="username" required>
       <label for="pw">비밀번호</label>
-      <input type="password" id="pw" autocomplete="current-password" required>
-      <button type="submit" id="loginbtn">로그인</button>
+      <input type="password" id="pw" autocomplete="current-password"
+             inputmode="numeric" required autofocus>
+      <button type="submit" id="loginbtn">열기</button>
       <div class="err" id="loginerr"></div>
     </form>
   </div>
@@ -135,8 +134,7 @@
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
-  from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc }
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { FIREBASE_CONFIG, DATABASE_ID } from './firebase-config.js';
@@ -149,46 +147,61 @@ const db   = DATABASE_ID && DATABASE_ID !== '(default)'
   ? getFirestore(app, DATABASE_ID) : getFirestore(app);
 
 const $ = id => document.getElementById(id);
-let stateRef = null, saveTimer = null;
+const stateRef = doc(db, 'runway', 'state');
+let cryptoKey = null, saveTimer = null;
 
-/* ── 로그인 ───────────────────────────────────────────────────────── */
+/* ── 암복호 (seed_firestore.py 와 같은 방식) ──────────────────────────
+   PBKDF2-HMAC-SHA256 → AES-256-GCM.
+   비밀번호는 브라우저 밖으로 나가지 않고, 서버에는 암호문만 있습니다.  */
+const b64d = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const b64e = b => btoa(String.fromCharCode(...new Uint8Array(b)));
+
+async function deriveKey(password, salt, iterations){
+  const base = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name:'PBKDF2', salt, iterations, hash:'SHA-256' },
+    base, { name:'AES-GCM', length:256 }, false, ['encrypt','decrypt']);
+}
+async function decryptDoc(d, password){
+  const key = await deriveKey(password, b64d(d.salt), d.iterations || 310000);
+  const buf = await crypto.subtle.decrypt(
+    { name:'AES-GCM', iv: b64d(d.iv) }, key, b64d(d.ct));   /* 틀리면 예외 */
+  return { key, data: JSON.parse(new TextDecoder().decode(buf)) };
+}
+async function encryptPayload(key, payload, salt, iterations){
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name:'AES-GCM', iv }, key,
+    new TextEncoder().encode(JSON.stringify(payload)));
+  return { v:1, iterations, salt: b64e(salt), iv: b64e(iv), ct: b64e(ct) };
+}
+
+/* ── 열기 ─────────────────────────────────────────────────────────── */
+let rawDoc = null;
 $('loginform').addEventListener('submit', async e => {
   e.preventDefault();
+  const pw = $('pw').value;
   $('loginbtn').disabled = true; $('loginerr').textContent = '';
   try {
-    await signInWithEmailAndPassword(auth, $('email').value.trim(), $('pw').value);
+    if(!rawDoc){
+      await signInAnonymously(auth);          /* 무작위 REST 조회를 막는 최소 방어 */
+      const snap = await getDoc(stateRef);
+      if(!snap.exists()) throw new Error('NO_DATA');
+      rawDoc = snap.data();
+    }
+    const { key, data } = await decryptDoc(rawDoc, pw);
+    cryptoKey = key;
+    boot(data);
   } catch (err) {
-    const m = {
-      'auth/invalid-credential': '이메일 또는 비밀번호가 맞지 않습니다.',
-      'auth/invalid-email': '이메일 형식이 올바르지 않습니다.',
-      'auth/too-many-requests': '시도가 많아 잠시 막혔습니다. 잠시 후 다시 시도하세요.',
-      'auth/network-request-failed': '네트워크에 연결할 수 없습니다.',
-    }[err.code] || `로그인에 실패했습니다. (${err.code || err.message})`;
-    $('loginerr').textContent = m;
+    $('loginerr').textContent =
+      err.message === 'NO_DATA' ? '데이터가 없습니다. build/seed_firestore.py 를 먼저 실행하세요.'
+      : err.name === 'OperationError' ? '비밀번호가 맞지 않습니다.'
+      : `열지 못했습니다. (${err.code || err.name || err.message})`;
   } finally {
     $('loginbtn').disabled = false; $('pw').value = '';
   }
 });
-$('logoutbtn').addEventListener('click', () => signOut(auth));
-
-onAuthStateChanged(auth, async user => {
-  if(!user){
-    $('gate').style.display = 'flex'; $('app').classList.remove('on');
-    return;
-  }
-  stateRef = doc(db, 'users', user.uid, 'runway', 'state');
-  try {
-    const snap = await getDoc(stateRef);
-    if(!snap.exists()){
-      $('loginerr').textContent = '데이터가 없습니다. build/seed_firestore.py 를 먼저 실행하세요.';
-      await signOut(auth); return;
-    }
-    boot(snap.data());
-  } catch (err) {
-    $('loginerr').textContent = `데이터를 읽지 못했습니다. 보안 규칙을 확인하세요. (${err.code || err.message})`;
-    await signOut(auth);
-  }
-});
+$('logoutbtn').addEventListener('click', () => location.reload());
 
 /* ── 부팅 ─────────────────────────────────────────────────────────── */
 let booted = false;
@@ -198,14 +211,19 @@ function boot(data){
     irregular: [],
     start: { date: data.startDate, as_of: data.asOf, balances: data.balances || {} },
   });
-  /* 잔액을 고치면 디바운스 후 Firestore 에 저장한다 */
+  /* 잔액을 고치면 디바운스 후 다시 암호화해 Firestore 에 저장한다.
+     문서 전체를 새 암호문으로 덮어쓴다 — 평문 필드는 만들지 않는다. */
   R.onBalanceChange = balances => {
     clearTimeout(saveTimer);
     $('saving').textContent = '저장 중…';
     saveTimer = setTimeout(async () => {
       try {
-        await setDoc(stateRef, { balances, asOf: R.start, updatedAt: new Date().toISOString() },
-                     { merge: true });
+        const next = { ...data, balances, asOf: R.start,
+                       updatedAt: new Date().toISOString() };
+        rawDoc = await encryptPayload(cryptoKey, next,
+                   b64d(rawDoc.salt), rawDoc.iterations || 310000);
+        await setDoc(stateRef, rawDoc);
+        data = next;
         $('saving').textContent = '저장됨';
         setTimeout(() => { $('saving').textContent = ''; }, 2000);
       } catch (err) {

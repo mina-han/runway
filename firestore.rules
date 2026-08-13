@@ -1,23 +1,31 @@
 rules_version = '2';
 
-// Firebase 콘솔 → Firestore Database → 규칙 에 이 내용을 붙여넣고 게시하세요.
+// Firebase 콘솔 → Firestore Database → 규칙 에 붙여넣고 게시하세요.
 //
-// 핵심: 로그인한 본인의 문서만 읽고 쓸 수 있습니다.
-// 그 밖의 모든 경로는 기본 거부입니다 — 규칙에 없는 경로는 접근할 수 없습니다.
+// 이 문서에는 암호문만 들어 있습니다. 진짜 방어선은 비밀번호이고,
+// 규칙은 그 앞의 얇은 울타리(무작위 REST 조회·낙서 차단) 역할입니다.
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    match /users/{uid}/{document=**} {
-      allow read: if request.auth != null && request.auth.uid == uid;
+    match /runway/state {
+      // 익명 로그인이라도 거쳐야 읽을 수 있게 한다.
+      // 읽어 가도 비밀번호가 없으면 해독할 수 없다.
+      allow read: if request.auth != null;
 
-      // 잔액 갱신만 허용하고 스케줄 위조는 막는다.
-      // 스케줄 변경은 관리자 키를 쓰는 씨딩 스크립트로만 한다.
-      allow update: if request.auth != null
-                    && request.auth.uid == uid
-                    && request.resource.data.diff(resource.data).affectedKeys()
-                         .hasOnly(['balances', 'asOf', 'updatedAt']);
+      // 쓰기는 '암호문 모양'을 갖춘 문서만 허용한다.
+      // 평문 필드를 끼워 넣거나 문서를 지우는 건 막는다.
+      allow write: if request.auth != null
+                   && request.resource.data.keys().hasOnly(
+                        ['v', 'iterations', 'salt', 'iv', 'ct'])
+                   && request.resource.data.ct is string
+                   && request.resource.data.salt is string
+                   && request.resource.data.iv is string
+                   && request.resource.data.ct.size() < 200000;
+    }
 
-      allow create, delete: if false;
+    // 그 밖의 모든 경로는 거부
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
