@@ -1,6 +1,16 @@
 # Claude Code 로컬 설정 (이 PC 전용 절대경로 포함)
 .claude/settings.local.json
 
+# 비밀키 — 절대 커밋 금지
+# Firebase service account (admin SDK) 키는 보안 규칙을 전부 우회하는 관리자 권한입니다.
+*firebase-adminsdk*.json
+*service-account*.json
+serviceAccountKey.json
+.env
+.env.*
+!.env.example
+.vercel
+
 # Python
 __pycache__/
 *.py[cod]
