@@ -1,0 +1,13 @@
+# Claude Code 로컬 설정 (이 PC 전용 절대경로 포함)
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
