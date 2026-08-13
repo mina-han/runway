@@ -26,6 +26,22 @@ NH농협 2개 · 우리은행 1개 계좌의 거래내역에서 매달 반복되
 - **계약 수입 포함** — 임대료·아동수당처럼 계약으로 정해진 수입만 반영
 - **배우자 이체까지** — 배우자 이체를 가장 최근 달 수준으로 가정
 
+## 배포판
+
+같은 데이터로 로그인이 걸린 웹 버전(`public/index.html`)도 함께 만들어집니다.
+설정 순서는 **[DEPLOY.md](DEPLOY.md)** 를 보세요.
+
+| | 로컬 `dashboard.html` | 배포판 `public/index.html` |
+|---|---|---|
+| 거래내역 168건 · 계좌번호 · 실명 | 파일에 포함 | **없음** |
+| 5~7월 실적 분석 | 포함 | 없음 |
+| 반복 스케줄 · 잔액 | 파일에 포함 | Firestore 에서 로그인 후 로드 |
+| 로그인 | 없음 | Firebase 이메일/비밀번호 |
+
+정적 파일에 로그인 화면만 씌우는 건 보호가 아닙니다 — 데이터가 파일에 있으면
+로그인 없이 파일만 받아도 다 읽힙니다. 그래서 배포판에는 데이터를 넣지 않았고,
+`build.py` 가 빌드할 때마다 데이터가 섞이지 않았는지 검사해 섞이면 중단합니다.
+
 ## 갱신
 
 새 명세서를 `1. 은행 거래내역 데이터/` 에 넣고:
@@ -34,9 +50,25 @@ NH농협 2개 · 우리은행 1개 계좌의 거래내역에서 매달 반복되
 python build/analyze.py && python build/build.py
 ```
 
-`analyze.py` 가 엑셀을 읽어 `data.json` 을 만들고, `build.py` 가 데이터를
-`build/template.html` 에 끼워 넣어 `dashboard.html` 을 생성합니다.
-필요 패키지: `pandas`, `openpyxl`.
+`analyze.py` 가 엑셀을 읽어 `data.json` 을 만들고, `build.py` 가 데이터와
+공용 로직(`build/runway-core.js`)을 템플릿에 끼워 넣어 `dashboard.html` 과
+`public/index.html` 을 생성합니다. 필요 패키지: `pandas`, `openpyxl`.
+
+배포판까지 갱신하려면 이어서 `python build/seed_firestore.py` 를 실행합니다
+(잔액만 바뀐 경우엔 배포된 사이트에서 직접 고치면 되고 실행할 필요 없습니다).
+
+## 파일 구조
+
+```
+build/analyze.py         엑셀 → data.json (분류 · 정합성 검증 · 스케줄 추출)
+build/runway-core.js     런웨이 계산과 차트 — 로컬판·배포판 공용
+build/template.html      로컬판 템플릿 (실적 분석 포함)
+build/template_web.html  배포판 템플릿 (로그인 + Firestore)
+build/build.py           템플릿 + 데이터 → 결과물 2종
+build/seed_firestore.py  잔액·스케줄만 Firestore 에 업로드
+firestore.rules          보안 규칙 (콘솔에 붙여넣을 내용)
+vercel.json              public/ 만 배포, 색인 차단 헤더
+```
 
 ## 계산 규칙
 

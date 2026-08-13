@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="ko" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>런웨이 · 잔고 소진일</title>
+<style>
+/*__STYLE__*/
+/* ── 로그인 게이트 ────────────────────────────────────────────────── */
+#gate{position:fixed;inset:0;z-index:100;background:var(--plane);display:flex;
+  align-items:center;justify-content:center;padding:24px}
+#gate .box{width:100%;max-width:380px;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);box-shadow:var(--shadow);padding:30px 28px}
+#gate h1{font-size:22px;font-weight:700;letter-spacing:-.03em;margin:0 0 6px}
+#gate p{font-size:13.5px;color:var(--muted);margin-bottom:22px}
+#gate label{display:block;font-size:12.5px;color:var(--ink-2);font-weight:600;margin:0 0 6px}
+#gate input{width:100%;font:inherit;font-size:14px;background:var(--surface-2);
+  border:1px solid var(--border);border-radius:9px;padding:10px 12px;color:var(--ink);margin-bottom:14px}
+#gate input:focus{outline:2px solid var(--in);outline-offset:1px}
+#gate button{width:100%;font:inherit;font-size:14px;font-weight:650;background:var(--in);color:#fff;
+  border:0;border-radius:9px;padding:11px;cursor:pointer}
+#gate button:disabled{opacity:.55;cursor:default}
+#gate .err{font-size:13px;color:var(--crit);margin-top:12px;min-height:19px}
+#app{display:none}
+#app.on{display:block}
+.topbar{display:flex;justify-content:flex-end;gap:8px;padding-top:14px}
+.topbar button{background:var(--surface);color:var(--ink-2);border:1px solid var(--border);
+  border-radius:999px;padding:6px 13px;font:inherit;font-size:12.5px;cursor:pointer}
+.topbar button:hover{color:var(--ink)}
+.saving{font-size:12px;color:var(--muted);align-self:center;margin-right:auto}
+</style>
+</head>
+<body>
+
+<!-- 로그인 -->
+<div id="gate">
+  <div class="box">
+    <h1>런웨이</h1>
+    <p>잔고 소진일 대시보드입니다. 등록된 계정만 볼 수 있습니다.</p>
+    <form id="loginform">
+      <label for="email">이메일</label>
+      <input type="email" id="email" autocomplete="username" required>
+      <label for="pw">비밀번호</label>
+      <input type="password" id="pw" autocomplete="current-password" required>
+      <button type="submit" id="loginbtn">로그인</button>
+      <div class="err" id="loginerr"></div>
+    </form>
+  </div>
+</div>
+
+<!-- 대시보드 -->
+<div id="app">
+<div class="wrap">
+  <div class="topbar">
+    <span class="saving" id="saving"></span>
+    <button type="button" id="themebtn">테마</button>
+    <button type="button" id="logoutbtn">로그아웃</button>
+  </div>
+
+  <header>
+    <div class="eyebrow">RUNWAY · 잔고 소진일 예측</div>
+    <h1>언제 잔고가 바닥나는가</h1>
+    <p class="sub">매달 반복되는 결제일과 금액을 바탕으로, 지금 잔액으로 며칠을 버틸 수 있는지
+       계산합니다. 잔액을 고치면 즉시 저장되고 다른 기기에서도 같은 값이 보입니다.</p>
+    <div class="notice">
+      <span class="ic">●</span>
+      <div>
+        <span id="notice-txt"></span>
+        <button class="linkbtn" id="btn-settle">지금 정산하기 →</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="alert" id="alert"></div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="card-lab">현재 잔액 <span class="badge" id="bal-badge">데이터 기준</span></div>
+      <div class="big" id="bal-total"></div>
+      <div class="card-cap">계좌별 금액을 눌러 실제 잔액으로 고치면 소진일이 즉시 다시 계산됩니다.</div>
+      <div class="acctlist" id="bal-list"></div>
+    </div>
+    <div class="card">
+      <div class="card-lab">예측 종료 시점 잔액</div>
+      <div class="big" id="end-bal"></div>
+      <div class="card-cap" id="end-cap"></div>
+      <div class="acctlist" style="border-top:1px solid var(--border);margin-top:16px">
+        <div class="acctrow"><span class="nm">월 정기지출</span><b class="n" id="m-out"></b></div>
+        <div class="acctrow"><span class="nm">월 정기수입 (시나리오 반영)</span><b class="n" id="m-in"></b></div>
+        <div class="acctrow"><span class="nm">월 순증감</span><b class="n" id="m-net"></b></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="barrow">
+    <div class="fgroup"><span>기준일</span><input type="date" id="f-start" aria-label="예측 시작일"></div>
+    <div class="fgroup"><span>시나리오</span><div class="seg" id="f-scn"></div></div>
+    <div class="fgroup"><span>예측 기간</span><div class="seg" id="f-hz"></div></div>
+  </div>
+
+  <section style="margin-top:8px">
+    <div class="card">
+      <div class="card-head">
+        <div><h4>잔고 흐름</h4><div class="desc" id="flow-desc"></div></div>
+        <button class="tbtn" data-toggle="run">표 보기</button>
+      </div>
+      <div class="plot" id="p-run"></div>
+      <div class="tw hide scroll" id="t-run"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h3 class="sec">일별 출금 예정</h3>
+      <span class="sec-note" id="sched-scope"></span></div>
+    <div class="card" style="padding-top:16px"><div class="tw scroll" id="t-sched"></div></div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h3 class="sec">예측에 쓴 반복 항목</h3>
+      <span class="sec-note">결제일 = 월별 첫 발생일의 중앙값 · 금액 = 월 합계의 평균</span></div>
+    <div class="card" style="padding-top:16px">
+      <div id="sched-sum"></div>
+      <div class="tw" id="t-items"></div>
+    </div>
+  </section>
+
+  <footer>
+    반복 항목만으로 계산한 예측입니다. 세금·수리비 같은 일회성 지출은 빠져 있어
+    실제 소진일은 더 빠를 수 있습니다.<br>
+    거래내역 원본과 5~7월 실적 분석은 이 사이트에 올리지 않았습니다 — 로컬 <code>dashboard.html</code>에서 보세요.
+  </footer>
+</div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
+  from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { getFirestore, doc, getDoc, setDoc }
+  from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { FIREBASE_CONFIG, DATABASE_ID } from './firebase-config.js';
+
+/*__RUNWAY_CORE__*/
+
+const app  = initializeApp(FIREBASE_CONFIG);
+const auth = getAuth(app);
+const db   = DATABASE_ID && DATABASE_ID !== '(default)'
+  ? getFirestore(app, DATABASE_ID) : getFirestore(app);
+
+const $ = id => document.getElementById(id);
+let stateRef = null, saveTimer = null;
+
+/* ── 로그인 ───────────────────────────────────────────────────────── */
+$('loginform').addEventListener('submit', async e => {
+  e.preventDefault();
+  $('loginbtn').disabled = true; $('loginerr').textContent = '';
+  try {
+    await signInWithEmailAndPassword(auth, $('email').value.trim(), $('pw').value);
+  } catch (err) {
+    const m = {
+      'auth/invalid-credential': '이메일 또는 비밀번호가 맞지 않습니다.',
+      'auth/invalid-email': '이메일 형식이 올바르지 않습니다.',
+      'auth/too-many-requests': '시도가 많아 잠시 막혔습니다. 잠시 후 다시 시도하세요.',
+      'auth/network-request-failed': '네트워크에 연결할 수 없습니다.',
+    }[err.code] || `로그인에 실패했습니다. (${err.code || err.message})`;
+    $('loginerr').textContent = m;
+  } finally {
+    $('loginbtn').disabled = false; $('pw').value = '';
+  }
+});
+$('logoutbtn').addEventListener('click', () => signOut(auth));
+
+onAuthStateChanged(auth, async user => {
+  if(!user){
+    $('gate').style.display = 'flex'; $('app').classList.remove('on');
+    return;
+  }
+  stateRef = doc(db, 'users', user.uid, 'runway', 'state');
+  try {
+    const snap = await getDoc(stateRef);
+    if(!snap.exists()){
+      $('loginerr').textContent = '데이터가 없습니다. build/seed_firestore.py 를 먼저 실행하세요.';
+      await signOut(auth); return;
+    }
+    boot(snap.data());
+  } catch (err) {
+    $('loginerr').textContent = `데이터를 읽지 못했습니다. 보안 규칙을 확인하세요. (${err.code || err.message})`;
+    await signOut(auth);
+  }
+});
+
+/* ── 부팅 ─────────────────────────────────────────────────────────── */
+let booted = false;
+function boot(data){
+  initRunway({
+    schedule: data.schedule || [],
+    irregular: [],
+    start: { date: data.startDate, as_of: data.asOf, balances: data.balances || {} },
+  });
+  /* 잔액을 고치면 디바운스 후 Firestore 에 저장한다 */
+  R.onBalanceChange = balances => {
+    clearTimeout(saveTimer);
+    $('saving').textContent = '저장 중…';
+    saveTimer = setTimeout(async () => {
+      try {
+        await setDoc(stateRef, { balances, asOf: R.start, updatedAt: new Date().toISOString() },
+                     { merge: true });
+        $('saving').textContent = '저장됨';
+        setTimeout(() => { $('saving').textContent = ''; }, 2000);
+      } catch (err) {
+        $('saving').textContent = '저장 실패: ' + (err.code || err.message);
+      }
+    }, 600);
+  };
+  $('gate').style.display = 'none';
+  $('app').classList.add('on');
+  if(!booted){ bindRunwayControls(); bindTableToggles(); booted = true; }
+  else { $('f-start').value = R.start; }
+  drawRunway(); drawItems();
+}
+
+$('themebtn').addEventListener('click', () => {
+  const dark = document.documentElement.getAttribute('data-theme') !== 'light';
+  document.documentElement.setAttribute('data-theme', dark ? 'light' : 'dark');
+  if(D) { drawRunway(); drawItems(); }   /* 서피스 색이 바뀌므로 다시 그린다 */
+});
+</script>
+</body>
+</html>

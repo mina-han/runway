@@ -1,0 +1,23 @@
+rules_version = '2';
+
+// Firebase 콘솔 → Firestore Database → 규칙 에 이 내용을 붙여넣고 게시하세요.
+//
+// 핵심: 로그인한 본인의 문서만 읽고 쓸 수 있습니다.
+// 그 밖의 모든 경로는 기본 거부입니다 — 규칙에 없는 경로는 접근할 수 없습니다.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{uid}/{document=**} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+
+      // 잔액 갱신만 허용하고 스케줄 위조는 막는다.
+      // 스케줄 변경은 관리자 키를 쓰는 씨딩 스크립트로만 한다.
+      allow update: if request.auth != null
+                    && request.auth.uid == uid
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['balances', 'asOf', 'updatedAt']);
+
+      allow create, delete: if false;
+    }
+  }
+}
