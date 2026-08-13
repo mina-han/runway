@@ -21,3 +21,8 @@ venv/
 Thumbs.db
 .DS_Store
 desktop.ini
+
+.vercel
+.env*
+# 위 .env* 가 앞의 예외를 덮으므로 여기서 다시 살린다 (템플릿은 커밋해야 함)
+!.env.example
